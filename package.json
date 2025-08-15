@@ -1,20 +1,26 @@
 {
-  "name": "revuu-anime-nextjs",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "node ./node_modules/next/dist/bin/next dev",
-    "build": "node ./node_modules/next/dist/bin/next build",
-    "start": "node ./node_modules/next/dist/bin/next start"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.1",
-    "clsx": "^2.1.1",
+    "@supabase/supabase-js": "2.45.4",
+    "class-variance-authority": "^0.7.1",
+    "lucide-react": "^0.539.0",
     "next": "15.4.6",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "recharts": "^2.15.4",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss-animate": "^1.0.7"
   },
-  "engines": {
-    "node": ">=18.18.0"
+  "devDependencies": {
+    "autoprefixer": "10.4.20",
+    "postcss": "8.4.41",
+    "tailwindcss": "3.4.10"
   }
 }
