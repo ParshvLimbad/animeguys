@@ -44,6 +44,20 @@ export const Q = {
       }
     }
   `,
+  CALENDAR: `
+    query Calendar($from:Int!,$to:Int!,$page:Int=1,$perPage:Int=50){
+      Page(page:$page, perPage:$perPage){
+        pageInfo{ currentPage hasNextPage }
+        airingSchedules(airingAt_greater:$from, airingAt_lesser:$to, sort:TIME){
+          id episode airingAt
+          media{
+            id
+            title{ romaji english native }
+            coverImage{ large }
+          }
+        }
+      }
+    }`,
   POPULAR: `
     query Popular($page:Int=1,$perPage:Int=24){
       Page(page:$page, perPage:$perPage){
