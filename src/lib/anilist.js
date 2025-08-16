@@ -11,8 +11,7 @@ export async function gql(query, variables = {}) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ query, variables }),
-    // cache on the server for a minute to avoid hammering the API
-    next: { revalidate: 60 },
+    cache: 'no-store',
   });
 
   const text = await res.text();
@@ -27,6 +26,22 @@ export async function gql(query, variables = {}) {
 }
 
 export const Q = {
+  CATALOG: `
+    query Catalog($page:Int=1,$perPage:Int=50){
+      Page(page:$page, perPage:$perPage){
+        pageInfo{ currentPage hasNextPage }
+        media(type:ANIME, sort:POPULARITY_DESC){
+          id
+          title{ romaji english native }
+          coverImage{ large extraLarge }
+          genres
+          description(asHtml:false)
+          seasonYear
+          format
+        }
+      }
+    }
+  `,
   TRENDING: `
     query Trending($page:Int=1,$perPage:Int=24){
       Page(page:$page, perPage:$perPage){
@@ -178,6 +193,10 @@ export async function fetchDetail(id, airPage = 1, revPage = 1) {
   return gql(Q.DETAIL, { id: Number(id), airPage, revPage });
 }
 
+export async function fetchCatalog(page = 1, perPage = 50) {
+  return gql(Q.CATALOG, { page, perPage });
+}
+
 // Export both named and default to avoid import mismatches
-const defaultExport = { API, gql, Q, fetchDetail };
+const defaultExport = { API, gql, Q, fetchDetail, fetchCatalog };
 export default defaultExport;
