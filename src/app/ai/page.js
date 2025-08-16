@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { fetchCatalog } from "@/lib/anilist";
 
-// local safeSanitize guard (do not import to avoid missing export warnings)
+/** Local helpers (kept here to avoid import/export drift) */
 function safeSanitize(text) {
   if (!text) return "";
   return String(text)
@@ -14,12 +14,42 @@ function safeSanitize(text) {
     .trim();
 }
 
-// tiny JSON extractor stays the same if you have one elsewhere
 function extractJSONBlock(s) {
   const first = s.indexOf("{");
   const last = s.lastIndexOf("}");
   if (first === -1 || last === -1 || last < first) throw new Error("No JSON found");
   return JSON.parse(s.slice(first, last + 1));
+}
+
+/** Build catalog items from AniList catalog pages */
+function buildCatalog(d1, d2) {
+  const arr = [d1?.Page?.media || [], d2?.Page?.media || []].flat();
+  return arr.map((m) => ({
+    id: m.id,
+    // english -> romaji -> native (never "Untitled")
+    title: (m?.title?.english || m?.title?.romaji || m?.title?.native || "")
+      .slice(0, 80)
+      .replace(/\"/g, "'"),
+    genres: (m.genres || []).slice(0, 5).join(", "),
+    year: m.seasonYear,
+    format: m.format,
+    desc: safeSanitize(m.description).slice(0, 280),
+    coverImage: m.coverImage,
+    titleObj: m.title,
+  }));
+}
+
+/** Read a browser key safely */
+function getBrowserKey() {
+  // window.OPENROUTER_KEY wins (handy for quick local overrides)
+  if (typeof window !== "undefined" && window.OPENROUTER_KEY) {
+    return String(window.OPENROUTER_KEY).trim();
+  }
+  // env fallback
+  if (process.env.NEXT_PUBLIC_OPENROUTER_API_KEY) {
+    return String(process.env.NEXT_PUBLIC_OPENROUTER_API_KEY).trim();
+  }
+  return "";
 }
 
 export default function Page() {
@@ -34,29 +64,35 @@ export default function Page() {
   const [page2, setPage2] = useState(null);
   const loadingCatalogRef = useRef(false);
 
-  const catalog = useMemo(() => {
-    const arr = [page1?.Page?.media || [], page2?.Page?.media || []].flat();
-    return arr.map((m) => ({
-      id: m.id,
-      title: (m?.title?.english || m?.title?.romaji || m?.title?.native || "").slice(0, 80).replace(/\"/g, "'"),
-      genres: (m.genres || []).slice(0, 5).join(", "),
-      year: m.seasonYear,
-      format: m.format,
-      desc: safeSanitize(m.description).slice(0, 280),
-      coverImage: m.coverImage,
-      titleObj: m.title,
-    }));
-  }, [page1, page2]);
+  // memo’d view of current state (nice for UI), but we won’t trust it inside getAI due to race
+  const catalogMemo = useMemo(() => buildCatalog(page1, page2), [page1, page2]);
+  const catalogReady = catalogMemo.length > 0;
 
-  const catalogReady = catalog.length > 0;
-
+  /** Ensure catalog is loaded; returns the freshest [d1, d2] so the caller can proceed synchronously. */
   async function ensureCatalogLoaded() {
-    if (catalogReady || loadingCatalogRef.current) return;
+    if (catalogReady) return [page1, page2];
+    if (loadingCatalogRef.current) {
+      // Wait until the ongoing load finishes and we see state populated
+      await new Promise((resolve) => {
+        const start = Date.now();
+        const timer = setInterval(() => {
+          if (buildCatalog(page1, page2).length > 0) {
+            clearInterval(timer);
+            resolve();
+          } else if (Date.now() - start > 8000) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, 100);
+      });
+      return [page1, page2];
+    }
     loadingCatalogRef.current = true;
     try {
       const [d1, d2] = await Promise.all([fetchCatalog(1, 50), fetchCatalog(2, 50)]);
       setPage1(d1);
       setPage2(d2);
+      return [d1, d2];
     } finally {
       loadingCatalogRef.current = false;
     }
@@ -64,7 +100,7 @@ export default function Page() {
 
   // initial load
   useEffect(() => {
-    ensureCatalogLoaded();
+    void ensureCatalogLoaded();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -72,19 +108,26 @@ export default function Page() {
     setLoading(true);
     setError(null);
     setResults([]);
+
     try {
-      // if user spam-clicks before load finishes, wait here
-      if (!catalogReady) {
-        await ensureCatalogLoaded();
-      }
-      // still not ready? show inline message instead of throwing
-      if (!catalogReady) {
+      // 1) Ensure we have *concrete* data in-hand, not just setState in flight
+      const [d1, d2] = await ensureCatalogLoaded();
+      const liveCatalog = buildCatalog(d1, d2);
+      if (!liveCatalog.length) {
         setError("Loading the catalog… please try again in a second.");
         return;
       }
 
-      // pick a subset
-      const picked = [...catalog].sort(() => Math.random() - 0.5).slice(0, 60);
+      // 2) Key guard (prevents "Bearer undefined")
+      const key = getBrowserKey();
+      if (!key) {
+        throw new Error(
+          "Missing OpenRouter key. Add NEXT_PUBLIC_OPENROUTER_API_KEY in .env.local (or set window.OPENROUTER_KEY)."
+        );
+      }
+
+      // 3) Pick a subset for the prompt
+      const picked = [...liveCatalog].sort(() => Math.random() - 0.5).slice(0, 60);
       const catalogText = picked
         .map(
           (m) =>
@@ -113,16 +156,12 @@ export default function Page() {
       };
 
       const headers = {
-        Authorization:
-          "Bearer " +
-          (typeof window !== "undefined"
-            ? window.OPENROUTER_KEY || process.env.NEXT_PUBLIC_OPENROUTER_API_KEY
-            : process.env.NEXT_PUBLIC_OPENROUTER_API_KEY),
+        Authorization: "Bearer " + key,
         "Content-Type": "application/json",
         "X-Title": "Revuu Anime",
       };
       try {
-        headers["HTTP-Referer"] = typeof window !== "undefined" ? window?.location?.origin || "" : "";
+        headers["HTTP-Referer"] = typeof window !== "undefined" ? window.location.origin || "" : "";
       } catch {}
 
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -130,17 +169,28 @@ export default function Page() {
         headers,
         body: JSON.stringify(body),
       });
+
       if (!res.ok) {
         const txt = await res.text();
+        if (res.status === 401) {
+          let hint = "401 Unauthorized from OpenRouter.";
+          try {
+            const j = JSON.parse(txt);
+            if (j?.error?.message) hint += " " + j.error.message;
+          } catch {}
+          hint += " Check: valid key, correct key type (browser), and Allowed Origins/Referer.";
+          throw new Error(hint);
+        }
         throw new Error("OpenRouter error: " + txt);
       }
+
       const json = await res.json();
-      const content = json.choices?.[0]?.message?.content || "";
+      const content = json?.choices?.[0]?.message?.content || "";
       const obj = extractJSONBlock(content);
       const ids = Array.isArray(obj.ids) ? obj.ids.slice(0, 4) : [];
       const reasons = Array.isArray(obj.reasons) ? obj.reasons : [];
 
-      const map = new Map(catalog.map((m) => [m.id, m]));
+      const map = new Map(liveCatalog.map((m) => [m.id, m]));
       const items = ids
         .map((id, i) => ({ media: map.get(Number(id)), reason: reasons[i] }))
         .filter((x) => x.media);
@@ -238,4 +288,4 @@ export default function Page() {
 if (typeof window !== "undefined" && !window.__ai_catalog_tested) {
   window.__ai_catalog_tested = true;
   console.assert(typeof fetchCatalog === "function", "fetchCatalog exists");
-}
+        }
