@@ -39,19 +39,6 @@ function buildCatalog(d1, d2) {
   }));
 }
 
-/** Read a browser key safely */
-function getBrowserKey() {
-  // window.OPENROUTER_KEY wins (handy for quick local overrides)
-  if (typeof window !== "undefined" && window.OPENROUTER_KEY) {
-    return String(window.OPENROUTER_KEY).trim();
-  }
-  // env fallback
-  if (process.env.NEXT_PUBLIC_OPENROUTER_API_KEY) {
-    return String(process.env.NEXT_PUBLIC_OPENROUTER_API_KEY).trim();
-  }
-  return "";
-}
-
 export default function Page() {
   const [query, setQuery] = useState("");
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1e9));
@@ -119,10 +106,9 @@ export default function Page() {
       }
 
       // 2) Key guard (prevents "Bearer undefined")
-      const key = getBrowserKey();
-      if (!key) {
+      if (!process.env.NEXT_PUBLIC_OPENROUTER_API_KEY) {
         throw new Error(
-          "Missing OpenRouter key. Add NEXT_PUBLIC_OPENROUTER_API_KEY in .env.local (or set window.OPENROUTER_KEY)."
+          "Missing OpenRouter key. Add NEXT_PUBLIC_OPENROUTER_API_KEY in .env.local."
         );
       }
 
@@ -146,28 +132,23 @@ export default function Page() {
       ];
       const userPrompt = parts.join("\n");
 
-      const body = {
-        model: "openai/gpt-oss-20b:free",
-        messages: [
-          { role: "system", content: "You are an anime recommender. Return STRICT JSON only." },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.8,
-      };
-
-      const headers = {
-        Authorization: "Bearer " + key,
-        "Content-Type": "application/json",
-        "X-Title": "Revuu Anime",
-      };
-      try {
-        headers["HTTP-Referer"] = typeof window !== "undefined" ? window.location.origin || "" : "";
-      } catch {}
-
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
-        headers,
-        body: JSON.stringify(body),
+        headers: {
+          Authorization: "Bearer " + process.env.NEXT_PUBLIC_OPENROUTER_API_KEY,
+          "HTTP-Referer": window.location.origin,
+          "X-Title": "Revuu Anime",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "deepseek/deepseek-r1:free",
+          messages: [
+            {
+              role: "user",
+              content: userPrompt,
+            },
+          ],
+        }),
       });
 
       if (!res.ok) {
