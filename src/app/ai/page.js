@@ -141,7 +141,7 @@ export default function Page() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "deepseek/deepseek-r1:free",
+          model: "openai/gpt-oss-20b:free",
           messages: [
             {
               role: "user",
