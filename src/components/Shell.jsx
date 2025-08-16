@@ -32,7 +32,7 @@ export default function Shell({ children }) {
       <header className="sticky top-0 z-30 backdrop-blur bg-neutral-950/70 border-b border-neutral-800">
         <div className="mx-auto max-w-7xl px-4 py-3 flex items-center gap-4">
           <Link href="/" className="text-xl font-black tracking-tight">
-            Revuu Anime
+            Animerecs
           </Link>
           <button
             className="ml-auto p-2 rounded hover:bg-neutral-800 md:hidden"
